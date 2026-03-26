@@ -12,6 +12,10 @@ from rigcheck.rules.parameter_groups import check_parameter_groups
 from rigcheck.rules.naming import check_naming
 from rigcheck.rules.unused import check_unused
 from rigcheck.rules.combinations import check_combinations
+from rigcheck.rules.motion_analysis import check_motion_analysis
+from rigcheck.rules.expression_stress import check_expression_stress
+from rigcheck.rules.physics_chain import check_physics_chain
+from rigcheck.rules.file_integrity import check_file_integrity
 from rigcheck.models import Severity
 
 
@@ -388,6 +392,160 @@ def test_combinations_blend_conflict():
         assert any("Blend" in f.message for f in infos)
 
 
+# === 모션 키프레임 분석 ===
+
+def test_motion_no_files():
+    with tempfile.TemporaryDirectory() as tmp:
+        model = _make_model(Path(tmp))
+        result = check_motion_analysis(model)
+        infos = [f for f in result.findings if f.severity == Severity.INFO]
+        assert any("모션 파일 없음" in f.message for f in infos)
+
+
+def test_motion_with_jump():
+    """급격한 값 변화가 있는 모션을 감지."""
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp)
+        # 모션 파일 직접 생성
+        (p / "motions").mkdir()
+        import json
+        motion_data = {
+            "Version": 3,
+            "Meta": {"Duration": 2.0, "Fps": 30, "CurveCount": 1},
+            "Curves": [{
+                "Target": "Parameter",
+                "Id": "ParamAngleX",
+                "Segments": [
+                    0.0,     # 첫 값
+                    0, 0.5, 0.1,   # linear: time=0.5, value=0.1
+                    0, 1.0, 25.0,  # linear: time=1.0, value=25.0 (큰 점프!)
+                ],
+            }],
+        }
+        (p / "motions" / "mtn_test.motion3.json").write_text(json.dumps(motion_data))
+
+        model = _make_model(p, model3={
+            "Version": 3,
+            "FileReferences": {
+                "Moc": "test.moc3", "Textures": ["t.png"],
+                "Motions": {"Idle": [{"File": "motions/mtn_test.motion3.json"}]},
+            },
+            "Groups": [
+                {"Target": "Parameter", "Name": "EyeBlink", "Ids": ["ParamEyeLOpen", "ParamEyeROpen"]},
+                {"Target": "Parameter", "Name": "LipSync", "Ids": ["ParamMouthOpenY"]},
+            ],
+        })
+        result = check_motion_analysis(model)
+        warnings = [f for f in result.findings if f.severity == Severity.WARNING]
+        assert any("급격한 값 변화" in f.message for f in warnings)
+
+
+# === 표정 조합 스트레스 테스트 ===
+
+def test_expression_stress_safe():
+    with tempfile.TemporaryDirectory() as tmp:
+        model = _make_model(Path(tmp), expressions=[
+            {"Type": "Live2D Expression", "Parameters": [
+                {"Id": "ParamEyeLOpen", "Value": 0.5, "Blend": "Add"},
+            ]},
+            {"Type": "Live2D Expression", "Parameters": [
+                {"Id": "ParamEyeROpen", "Value": 0.3, "Blend": "Add"},
+            ]},
+        ])
+        result = check_expression_stress(model)
+        warnings = [f for f in result.findings if f.severity == Severity.WARNING]
+        assert len(warnings) == 0
+
+
+def test_expression_stress_extreme():
+    with tempfile.TemporaryDirectory() as tmp:
+        model = _make_model(Path(tmp), expressions=[
+            {"Type": "Live2D Expression", "Parameters": [
+                {"Id": "ParamEyeLOpen", "Value": 1.5, "Blend": "Add"},
+            ]},
+            {"Type": "Live2D Expression", "Parameters": [
+                {"Id": "ParamEyeLOpen", "Value": 1.5, "Blend": "Add"},  # 합산 3.0 > 임계값
+            ]},
+        ])
+        result = check_expression_stress(model)
+        warnings = [f for f in result.findings if f.severity == Severity.WARNING]
+        assert any("극단값" in f.message for f in warnings)
+
+
+# === 물리 체인 검증 ===
+
+def test_physics_chain_no_cycle():
+    with tempfile.TemporaryDirectory() as tmp:
+        model = _make_model(Path(tmp), physics3={
+            "Version": 3,
+            "Meta": {"PhysicsSettingCount": 1, "Fps": 60,
+                     "EffectiveForces": {"Gravity": {"X": 0, "Y": -1}, "Wind": {"X": 0, "Y": 0}},
+                     "PhysicsDictionary": [{"Id": "PS1", "Name": "테스트"}]},
+            "PhysicsSettings": [{
+                "Input": [{"Source": {"Id": "ParamAngleX"}}],
+                "Output": [{"Destination": {"Id": "ParamEyeLOpen"}}],
+                "Normalization": {}, "Vertices": [],
+            }],
+        })
+        result = check_physics_chain(model)
+        warnings = [f for f in result.findings if f.severity == Severity.WARNING]
+        assert len(warnings) == 0
+
+
+def test_physics_chain_orphan_output():
+    with tempfile.TemporaryDirectory() as tmp:
+        model = _make_model(Path(tmp), physics3={
+            "Version": 3,
+            "Meta": {"PhysicsSettingCount": 1, "Fps": 60,
+                     "EffectiveForces": {"Gravity": {"X": 0, "Y": -1}, "Wind": {"X": 0, "Y": 0}},
+                     "PhysicsDictionary": [{"Id": "PS1", "Name": "테스트"}]},
+            "PhysicsSettings": [{
+                "Input": [{"Source": {"Id": "ParamAngleX"}}],
+                "Output": [{"Destination": {"Id": "ParamGhostOutput"}}],  # cdi3에 없음!
+                "Normalization": {}, "Vertices": [],
+            }],
+        })
+        result = check_physics_chain(model)
+        warnings = [f for f in result.findings if f.severity == Severity.WARNING]
+        assert any("출력 참조 오류" in f.message for f in warnings)
+
+
+# === 파일 참조 무결성 ===
+
+def test_file_integrity_all_present():
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp)
+        (p / "test.moc3").touch()
+        (p / "t.png").touch()
+        model = _make_model(p, model3={
+            "Version": 3,
+            "FileReferences": {"Moc": "test.moc3", "Textures": ["t.png"]},
+            "Groups": [
+                {"Target": "Parameter", "Name": "EyeBlink", "Ids": ["ParamEyeLOpen"]},
+                {"Target": "Parameter", "Name": "LipSync", "Ids": ["ParamMouthOpenY"]},
+            ],
+        })
+        result = check_file_integrity(model)
+        criticals = [f for f in result.findings if f.severity == Severity.CRITICAL]
+        assert len(criticals) == 0
+
+
+def test_file_integrity_missing_texture():
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp)
+        model = _make_model(p, model3={
+            "Version": 3,
+            "FileReferences": {"Moc": "test.moc3", "Textures": ["missing.png"]},
+            "Groups": [
+                {"Target": "Parameter", "Name": "EyeBlink", "Ids": ["ParamEyeLOpen"]},
+                {"Target": "Parameter", "Name": "LipSync", "Ids": ["ParamMouthOpenY"]},
+            ],
+        })
+        result = check_file_integrity(model)
+        criticals = [f for f in result.findings if f.severity == Severity.CRITICAL]
+        assert any("누락" in f.message for f in criticals)
+
+
 # === 실제 샘플 데이터 테스트 ===
 
 def test_real_sample():
@@ -405,9 +563,8 @@ def test_real_sample():
     assert len(model.lip_sync_ids) > 0
 
     # 모든 규칙 실행 — 크래시 없어야 함
-    for rule_fn in [check_symmetry, check_required_groups, check_physics,
-                    check_expressions, check_parameter_groups,
-                    check_naming, check_unused, check_combinations]:
+    from rigcheck.rules import ALL_RULES
+    for rule_fn in ALL_RULES:
         result = rule_fn(model)
         assert result.rule_name  # 이름이 있어야 함
 
