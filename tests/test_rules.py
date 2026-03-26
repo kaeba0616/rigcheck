@@ -9,6 +9,9 @@ from rigcheck.rules.required_groups import check_required_groups
 from rigcheck.rules.physics import check_physics
 from rigcheck.rules.expressions import check_expressions
 from rigcheck.rules.parameter_groups import check_parameter_groups
+from rigcheck.rules.naming import check_naming
+from rigcheck.rules.unused import check_unused
+from rigcheck.rules.combinations import check_combinations
 from rigcheck.models import Severity
 
 
@@ -259,6 +262,132 @@ def test_parameter_groups_empty_group():
         assert any("빈 그룹" in f.message for f in infos)
 
 
+# === 네이밍 규칙 검사 ===
+
+def test_naming_standard():
+    with tempfile.TemporaryDirectory() as tmp:
+        model = _make_model(Path(tmp))
+        result = check_naming(model)
+        warnings = [f for f in result.findings if f.severity == Severity.WARNING]
+        assert len(warnings) == 0
+
+
+def test_naming_duplicate_param():
+    with tempfile.TemporaryDirectory() as tmp:
+        model = _make_model(Path(tmp), cdi3={
+            "Version": 3,
+            "Parameters": [
+                {"Id": "ParamA", "GroupId": "G", "Name": "A"},
+                {"Id": "ParamA", "GroupId": "G", "Name": "A duplicate"},  # 중복!
+            ],
+            "ParameterGroups": [{"Id": "G", "GroupId": "", "Name": "G"}],
+            "Parts": [],
+        })
+        result = check_naming(model)
+        warnings = [f for f in result.findings if f.severity == Severity.WARNING]
+        assert any("중복" in f.message for f in warnings)
+
+
+def test_naming_non_standard_prefix():
+    with tempfile.TemporaryDirectory() as tmp:
+        model = _make_model(Path(tmp), cdi3={
+            "Version": 3,
+            "Parameters": [
+                {"Id": "CustomEyeOpen", "GroupId": "G", "Name": "눈"},  # Param 접두사 없음
+            ],
+            "ParameterGroups": [{"Id": "G", "GroupId": "", "Name": "G"}],
+            "Parts": [],
+        })
+        result = check_naming(model)
+        infos = [f for f in result.findings if f.severity == Severity.INFO]
+        assert any("비표준" in f.message for f in infos)
+
+
+# === 미사용 노드 감지 ===
+
+def test_unused_none():
+    """모든 파라미터가 참조되면 미사용 없음."""
+    with tempfile.TemporaryDirectory() as tmp:
+        model = _make_model(Path(tmp), physics3={
+            "Version": 3,
+            "Meta": {"PhysicsSettingCount": 1, "Fps": 60,
+                     "EffectiveForces": {"Gravity": {"X": 0, "Y": -1}, "Wind": {"X": 0, "Y": 0}}},
+            "PhysicsSettings": [{
+                "Input": [{"Source": {"Id": "ParamAngleX"}}],
+                "Output": [{"Destination": {"Id": "ParamMouthOpenY"}}],
+                "Normalization": {}, "Vertices": [],
+            }],
+        })
+        result = check_unused(model)
+        warnings = [f for f in result.findings if f.severity == Severity.WARNING]
+        assert len(warnings) == 0
+
+
+def test_unused_phantom_param():
+    """cdi3에 없는 파라미터를 물리에서 참조하면 WARNING."""
+    with tempfile.TemporaryDirectory() as tmp:
+        model = _make_model(Path(tmp), physics3={
+            "Version": 3,
+            "Meta": {"PhysicsSettingCount": 1, "Fps": 60,
+                     "EffectiveForces": {"Gravity": {"X": 0, "Y": -1}, "Wind": {"X": 0, "Y": 0}}},
+            "PhysicsSettings": [{
+                "Input": [{"Source": {"Id": "ParamGhost"}}],  # cdi3에 없음!
+                "Output": [], "Normalization": {}, "Vertices": [],
+            }],
+        })
+        result = check_unused(model)
+        warnings = [f for f in result.findings if f.severity == Severity.WARNING]
+        assert any("정의되지 않은" in f.message for f in warnings)
+
+
+# === 파라미터 조합 검사 ===
+
+def test_combinations_valid():
+    with tempfile.TemporaryDirectory() as tmp:
+        model = _make_model(Path(tmp), cdi3={
+            "Version": 3,
+            "Parameters": [
+                {"Id": "ParamA", "GroupId": "G", "Name": "A"},
+                {"Id": "ParamB", "GroupId": "G", "Name": "B"},
+            ],
+            "ParameterGroups": [{"Id": "G", "GroupId": "", "Name": "G"}],
+            "Parts": [],
+            "CombinedParameters": [["ParamA", "ParamB"]],
+        })
+        result = check_combinations(model)
+        warnings = [f for f in result.findings if f.severity == Severity.WARNING]
+        assert len(warnings) == 0
+
+
+def test_combinations_nonexistent_ref():
+    with tempfile.TemporaryDirectory() as tmp:
+        model = _make_model(Path(tmp), cdi3={
+            "Version": 3,
+            "Parameters": [{"Id": "ParamA", "GroupId": "G", "Name": "A"}],
+            "ParameterGroups": [{"Id": "G", "GroupId": "", "Name": "G"}],
+            "Parts": [],
+            "CombinedParameters": [["ParamA", "ParamNope"]],  # ParamNope 없음!
+        })
+        result = check_combinations(model)
+        warnings = [f for f in result.findings if f.severity == Severity.WARNING]
+        assert any("존재하지 않는" in f.message for f in warnings)
+
+
+def test_combinations_blend_conflict():
+    with tempfile.TemporaryDirectory() as tmp:
+        model = _make_model(Path(tmp), expressions=[
+            {"Type": "Live2D Expression", "Parameters": [
+                {"Id": "ParamEyeLOpen", "Value": 0, "Blend": "Add"},
+            ]},
+            {"Type": "Live2D Expression", "Parameters": [
+                {"Id": "ParamEyeLOpen", "Value": 1, "Blend": "Multiply"},  # 다른 Blend!
+            ]},
+        ])
+        result = check_combinations(model)
+        infos = [f for f in result.findings if f.severity == Severity.INFO]
+        assert any("Blend" in f.message for f in infos)
+
+
 # === 실제 샘플 데이터 테스트 ===
 
 def test_real_sample():
@@ -277,7 +406,8 @@ def test_real_sample():
 
     # 모든 규칙 실행 — 크래시 없어야 함
     for rule_fn in [check_symmetry, check_required_groups, check_physics,
-                    check_expressions, check_parameter_groups]:
+                    check_expressions, check_parameter_groups,
+                    check_naming, check_unused, check_combinations]:
         result = rule_fn(model)
         assert result.rule_name  # 이름이 있어야 함
 
