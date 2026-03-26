@@ -25,7 +25,8 @@ class CheckResult:
 
     @property
     def passed(self) -> bool:
-        return len(self.findings) == 0
+        """INFO만 있으면 PASS. Critical/Warning이 있으면 FAIL."""
+        return all(f.severity == Severity.INFO for f in self.findings)
 
 
 @dataclass

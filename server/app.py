@@ -12,6 +12,17 @@ from fastapi.staticfiles import StaticFiles
 
 from rigcheck.engine import run_check
 
+RULE_DESCRIPTIONS = {
+    "좌우 대칭성 검사": "L/R로 나뉘는 파라미터와 파츠가 짝이 맞는지 확인합니다.",
+    "필수 그룹 검사": "VTuber 트래킹에 필수적인 EyeBlink, LipSync 그룹이 있는지 확인합니다.",
+    "물리 설정 검증": "머리카락, 옷 등 물리 시뮬레이션 설정이 정상인지 확인합니다.",
+    "표정 파라미터 검사": "표정 파일의 파라미터 참조와 값이 유효한지 확인합니다.",
+    "파라미터 그룹 일관성": "파라미터가 올바른 그룹에 배정되어 있는지 확인합니다.",
+    "네이밍 규칙 검사": "파라미터/파츠 ID가 Live2D 표준 규칙을 따르는지 확인합니다.",
+    "미사용 노드 감지": "어디에서도 사용되지 않는 파라미터나 파츠를 찾습니다.",
+    "파라미터 조합 검사": "파라미터 조합 설정과 표정 간 Blend 모드 충돌을 확인합니다.",
+}
+
 app = FastAPI(title="RigCheck", version="0.1.0")
 
 app.add_middleware(
@@ -55,8 +66,21 @@ async def check_model(file: UploadFile = File(...)):
         except FileNotFoundError as e:
             return JSONResponse(status_code=400, content={"error": str(e)})
 
+    # 전체 판정
+    if report.critical_count > 0:
+        verdict = "수정이 필요합니다"
+        verdict_type = "critical"
+    elif report.warning_count > 0:
+        verdict = "개선할 부분이 있습니다"
+        verdict_type = "warning"
+    else:
+        verdict = "이 모델은 양호합니다"
+        verdict_type = "pass"
+
     return {
         "model_name": report.model_name,
+        "verdict": verdict,
+        "verdict_type": verdict_type,
         "total_findings": report.total_findings,
         "critical_count": report.critical_count,
         "warning_count": report.warning_count,
@@ -64,6 +88,7 @@ async def check_model(file: UploadFile = File(...)):
         "results": [
             {
                 "rule_name": r.rule_name,
+                "description": RULE_DESCRIPTIONS.get(r.rule_name, ""),
                 "passed": r.passed,
                 "findings": [
                     {

@@ -45,12 +45,31 @@
   .results { width: 100%; max-width: 640px; display: none; }
   .results.active { display: block; }
 
-  .summary {
-    background: #111; border-radius: 12px; padding: 1.5rem;
-    margin-bottom: 1.5rem; display: flex; gap: 1.5rem;
-    align-items: center; flex-wrap: wrap;
+  /* Verdict banner */
+  .verdict-banner {
+    border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem;
+    text-align: center;
   }
-  .summary .model-name { font-size: 1.3rem; font-weight: 600; flex: 1; }
+  .verdict-banner.pass {
+    background: rgba(110, 231, 183, 0.08); border: 1px solid rgba(110, 231, 183, 0.2);
+  }
+  .verdict-banner.warning {
+    background: rgba(234, 179, 8, 0.08); border: 1px solid rgba(234, 179, 8, 0.2);
+  }
+  .verdict-banner.critical {
+    background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2);
+  }
+  .verdict-icon { font-size: 2rem; margin-bottom: 0.5rem; }
+  .verdict-text { font-size: 1.2rem; font-weight: 600; margin-bottom: 0.25rem; }
+  .verdict-text.pass { color: #6ee7b7; }
+  .verdict-text.warning { color: #eab308; }
+  .verdict-text.critical { color: #ef4444; }
+  .verdict-sub { color: #888; font-size: 0.85rem; }
+
+  .summary-badges {
+    display: flex; gap: 0.75rem; justify-content: center;
+    margin-top: 1rem; flex-wrap: wrap;
+  }
   .badge {
     display: inline-flex; align-items: center; gap: 0.3rem;
     padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.85rem;
@@ -59,12 +78,11 @@
   .badge.critical { background: rgba(239,68,68,0.15); color: #ef4444; }
   .badge.warning { background: rgba(234,179,8,0.15); color: #eab308; }
   .badge.info { background: rgba(59,130,246,0.15); color: #3b82f6; }
-  .badge.pass { background: rgba(110,231,183,0.15); color: #6ee7b7; }
 
   /* Rule cards */
   .rule-card {
     background: #111; border-radius: 10px; margin-bottom: 0.75rem;
-    overflow: hidden;
+    overflow: hidden; border: 1px solid #1a1a1a;
   }
   .rule-header {
     padding: 1rem 1.25rem; display: flex; align-items: center;
@@ -74,36 +92,50 @@
   .rule-status {
     width: 28px; height: 28px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    font-size: 0.75rem; font-weight: 700; flex-shrink: 0;
+    font-size: 0.7rem; font-weight: 700; flex-shrink: 0;
   }
   .rule-status.pass { background: rgba(110,231,183,0.15); color: #6ee7b7; }
   .rule-status.fail { background: rgba(239,68,68,0.15); color: #ef4444; }
-  .rule-name { flex: 1; font-weight: 500; }
+  .rule-status.warn { background: rgba(234,179,8,0.15); color: #eab308; }
+  .rule-info { flex: 1; }
+  .rule-name { font-weight: 500; font-size: 0.95rem; }
+  .rule-desc { color: #666; font-size: 0.8rem; margin-top: 0.15rem; }
   .rule-count { color: #666; font-size: 0.85rem; }
-  .rule-arrow { color: #444; transition: transform 0.2s; }
+  .rule-arrow { color: #444; transition: transform 0.2s; font-size: 0.7rem; }
   .rule-card.open .rule-arrow { transform: rotate(90deg); }
 
   .rule-findings {
     max-height: 0; overflow: hidden; transition: max-height 0.3s ease;
   }
-  .rule-card.open .rule-findings { max-height: 1000px; }
+  .rule-card.open .rule-findings { max-height: 2000px; }
 
   .finding {
     padding: 0.75rem 1.25rem 0.75rem 3.5rem;
     border-top: 1px solid #1a1a1a;
   }
-  .finding-severity {
-    display: inline-block; width: 6px; height: 6px; border-radius: 50%;
-    margin-right: 0.5rem; vertical-align: middle;
+  .finding-header { display: flex; align-items: center; gap: 0.5rem; }
+  .finding-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
   }
-  .finding-severity.critical { background: #ef4444; }
-  .finding-severity.warning { background: #eab308; }
-  .finding-severity.info { background: #3b82f6; }
-  .finding-message { font-size: 0.9rem; }
-  .finding-details { color: #666; font-size: 0.8rem; margin-top: 0.25rem; }
+  .finding-dot.critical { background: #ef4444; }
+  .finding-dot.warning { background: #eab308; }
+  .finding-dot.info { background: #3b82f6; }
+  .finding-label {
+    font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+    padding: 0.1rem 0.4rem; border-radius: 3px;
+  }
+  .finding-label.critical { background: rgba(239,68,68,0.15); color: #ef4444; }
+  .finding-label.warning { background: rgba(234,179,8,0.15); color: #eab308; }
+  .finding-label.info { background: rgba(59,130,246,0.15); color: #3b82f6; }
+  .finding-message { font-size: 0.9rem; margin-top: 0.3rem; }
+  .finding-details {
+    color: #999; font-size: 0.8rem; margin-top: 0.4rem;
+    background: rgba(255,255,255,0.03); padding: 0.5rem 0.75rem;
+    border-radius: 6px; line-height: 1.5;
+  }
 
   .error {
-    background: rgba(239,68,68,0.1); border: 1px solid #ef4444;
+    background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3);
     border-radius: 10px; padding: 1rem 1.25rem; display: none;
     max-width: 640px; width: 100%;
   }
@@ -136,9 +168,9 @@
 <div class="error" id="error"></div>
 
 <div class="results" id="results">
-  <div class="summary" id="summary"></div>
+  <div id="verdictBanner"></div>
   <div id="ruleCards"></div>
-  <button class="reset-btn" onclick="resetUI()">다시 검사</button>
+  <button class="reset-btn" onclick="resetUI()">다시 검사하기</button>
 </div>
 
 <script>
@@ -147,6 +179,8 @@ const fileInput = document.getElementById('fileInput');
 const loading = document.getElementById('loading');
 const errorEl = document.getElementById('error');
 const results = document.getElementById('results');
+
+const SEVERITY_KO = { critical: '수정 필요', warning: '개선 권장', info: '참고' };
 
 dropzone.addEventListener('click', () => fileInput.click());
 dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
@@ -177,14 +211,8 @@ async function uploadFile(file) {
   try {
     const res = await fetch('/api/check', { method: 'POST', body: formData });
     const data = await res.json();
-
     loading.classList.remove('active');
-
-    if (!res.ok) {
-      showError(data.error || '서버 오류가 발생했습니다.');
-      return;
-    }
-
+    if (!res.ok) { showError(data.error || '서버 오류가 발생했습니다.'); return; }
     renderResults(data);
   } catch (err) {
     loading.classList.remove('active');
@@ -199,37 +227,57 @@ function showError(msg) {
 }
 
 function renderResults(data) {
-  // Summary
-  const summary = document.getElementById('summary');
-  summary.innerHTML = `
-    <div class="model-name">${data.model_name}</div>
-    ${data.critical_count > 0 ? `<span class="badge critical">Critical ${data.critical_count}</span>` : ''}
-    ${data.warning_count > 0 ? `<span class="badge warning">Warning ${data.warning_count}</span>` : ''}
-    ${data.info_count > 0 ? `<span class="badge info">Info ${data.info_count}</span>` : ''}
-    ${data.total_findings === 0 ? '<span class="badge pass">All Clear</span>' : ''}
+  const vType = data.verdict_type;
+  const icon = vType === 'pass' ? '&#10003;' : vType === 'warning' ? '&#9888;' : '&#10007;';
+  const passCount = data.results.filter(r => r.passed).length;
+
+  let badges = '';
+  if (data.critical_count > 0) badges += `<span class="badge critical">수정 필요 ${data.critical_count}건</span>`;
+  if (data.warning_count > 0) badges += `<span class="badge warning">개선 권장 ${data.warning_count}건</span>`;
+  if (data.info_count > 0) badges += `<span class="badge info">참고 ${data.info_count}건</span>`;
+
+  document.getElementById('verdictBanner').innerHTML = `
+    <div class="verdict-banner ${vType}">
+      <div class="verdict-icon">${icon}</div>
+      <div class="verdict-text ${vType}">${data.model_name} — ${data.verdict}</div>
+      <div class="verdict-sub">${data.results.length}개 규칙 중 ${passCount}개 통과</div>
+      <div class="summary-badges">${badges}</div>
+    </div>
   `;
 
-  // Rule cards
   const cards = document.getElementById('ruleCards');
-  cards.innerHTML = data.results.map((rule, i) => `
-    <div class="rule-card${rule.findings.length > 0 ? ' open' : ''}" onclick="this.classList.toggle('open')">
+  cards.innerHTML = data.results.map(rule => {
+    const hasCritical = rule.findings.some(f => f.severity === 'critical');
+    const hasWarning = rule.findings.some(f => f.severity === 'warning');
+    const statusClass = rule.passed ? 'pass' : (hasCritical ? 'fail' : 'warn');
+    const statusText = rule.passed ? 'OK' : (hasCritical ? '!!' : '!');
+    const shouldOpen = !rule.passed && (hasCritical || hasWarning);
+
+    return `
+    <div class="rule-card${shouldOpen ? ' open' : ''}" onclick="this.classList.toggle('open')">
       <div class="rule-header">
-        <div class="rule-status ${rule.passed ? 'pass' : 'fail'}">${rule.passed ? 'OK' : '!'}</div>
-        <span class="rule-name">${rule.rule_name}</span>
+        <div class="rule-status ${statusClass}">${statusText}</div>
+        <div class="rule-info">
+          <div class="rule-name">${rule.rule_name}</div>
+          <div class="rule-desc">${rule.description || ''}</div>
+        </div>
         <span class="rule-count">${rule.findings.length > 0 ? rule.findings.length + '건' : ''}</span>
         <span class="rule-arrow">&#9654;</span>
       </div>
       <div class="rule-findings">
         ${rule.findings.map(f => `
           <div class="finding">
-            <span class="finding-severity ${f.severity}"></span>
-            <span class="finding-message">${f.message}</span>
+            <div class="finding-header">
+              <span class="finding-dot ${f.severity}"></span>
+              <span class="finding-label ${f.severity}">${SEVERITY_KO[f.severity]}</span>
+            </div>
+            <div class="finding-message">${f.message}</div>
             ${f.details ? `<div class="finding-details">${f.details}</div>` : ''}
           </div>
         `).join('')}
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 
   results.classList.add('active');
 }
