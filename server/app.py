@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from rigcheck.engine import run_check
+from autorig.pipeline import run_pipeline
 
 RULE_DESCRIPTIONS = {
     "좌우 대칭성 검사": "L/R로 나뉘는 파라미터와 파츠가 짝이 맞는지 확인합니다.",
@@ -108,11 +109,79 @@ async def check_model(file: UploadFile = File(...)):
     }
 
 
+@app.post("/api/autorig")
+async def autorig(file: UploadFile = File(...)):
+    """이미지에서 Live2D 모델을 자동 생성한다."""
+    content = await file.read()
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+
+        # 이미지 저장
+        ext = Path(file.filename or "image.png").suffix or ".png"
+        image_path = tmp / f"input{ext}"
+        image_path.write_bytes(content)
+
+        output_dir = tmp / "output"
+
+        try:
+            result = run_pipeline(str(image_path), str(output_dir))
+        except Exception as e:
+            return JSONResponse(status_code=500, content={"error": str(e)})
+
+        if result["parts_count"] == 0:
+            return JSONResponse(status_code=400, content={"error": "파츠를 인식하지 못했습니다."})
+
+        # output 폴더를 ZIP으로 패키징
+        zip_buffer = BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            for file_path in output_dir.rglob("*"):
+                if file_path.is_file():
+                    arcname = file_path.relative_to(output_dir)
+                    zf.write(file_path, arcname)
+        zip_bytes = zip_buffer.getvalue()
+
+        # 파츠 데이터에서 프리뷰용 정보 추출
+        import base64
+        parts_for_preview = []
+        atlas_info_path = output_dir / "atlas_info.json"
+        if atlas_info_path.exists():
+            with open(atlas_info_path) as f:
+                atlas_info = json.load(f)
+                parts_for_preview = atlas_info.get("parts", [])
+
+        # 아틀라스 이미지를 base64로
+        atlas_path = output_dir / "model.4096" / "texture_00.png"
+        atlas_b64 = ""
+        if atlas_path.exists():
+            atlas_b64 = base64.b64encode(atlas_path.read_bytes()).decode()
+
+        # 원본 이미지 + 파츠 오버레이 프리뷰
+        from autorig.visualize import visualize
+        preview_path = tmp / "preview.png"
+        visualize(str(image_path), result["parts_data"], str(preview_path))
+        preview_b64 = base64.b64encode(preview_path.read_bytes()).decode()
+
+    return {
+        "parts_count": result["parts_count"],
+        "parts": parts_for_preview,
+        "parts_data": result["parts_data"],
+        "preview_image": preview_b64,
+        "atlas_image": atlas_b64,
+        "zip_base64": base64.b64encode(zip_bytes).decode(),
+        "qa_report": result["qa_report"],
+    }
+
+
 # 정적 파일 서빙 (web/index.html)
 WEB_DIR = Path(__file__).parent.parent / "web"
 if WEB_DIR.exists():
     @app.get("/")
     async def index():
+        return FileResponse(WEB_DIR / "autorig.html")
+
+    @app.get("/check")
+    async def check_page():
         return FileResponse(WEB_DIR / "index.html")
 
     app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")

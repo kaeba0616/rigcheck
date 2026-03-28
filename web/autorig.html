@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoRig — 이미지 → VTuber 모델</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0a0a0a; color: #e0e0e0; min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 2rem 1rem;
+  }
+  h1 { font-size: 2rem; font-weight: 700; margin-bottom: 0.25rem; }
+  h1 span { color: #a78bfa; }
+  .subtitle { color: #888; margin-bottom: 2rem; font-size: 0.9rem; }
+
+  .dropzone {
+    width: 100%; max-width: 640px;
+    border: 2px dashed #333; border-radius: 12px;
+    padding: 3rem 2rem; text-align: center;
+    cursor: pointer; transition: all 0.2s; margin-bottom: 2rem;
+  }
+  .dropzone:hover, .dropzone.dragover {
+    border-color: #a78bfa; background: rgba(167, 139, 250, 0.05);
+  }
+  .dropzone p { font-size: 1.1rem; margin-bottom: 0.5rem; }
+  .dropzone small { color: #666; }
+  .dropzone input { display: none; }
+
+  .progress { display: none; width: 100%; max-width: 640px; margin-bottom: 2rem; }
+  .progress.active { display: block; }
+  .step { padding: 0.75rem 1rem; margin-bottom: 0.5rem; border-radius: 8px;
+          background: #111; display: flex; align-items: center; gap: 0.75rem; }
+  .step-icon { width: 24px; height: 24px; border-radius: 50%;
+               display: flex; align-items: center; justify-content: center;
+               font-size: 0.7rem; font-weight: 700; flex-shrink: 0; }
+  .step-icon.waiting { background: #222; color: #555; }
+  .step-icon.running { background: rgba(167,139,250,0.2); color: #a78bfa;
+                       animation: pulse 1.5s infinite; }
+  .step-icon.done { background: rgba(110,231,183,0.15); color: #6ee7b7; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+  .step-text { flex: 1; font-size: 0.9rem; }
+  .step-text.dim { color: #555; }
+
+  .results { display: none; width: 100%; max-width: 640px; }
+  .results.active { display: block; }
+
+  .result-header {
+    background: rgba(167,139,250,0.08); border: 1px solid rgba(167,139,250,0.2);
+    border-radius: 12px; padding: 1.5rem; text-align: center; margin-bottom: 1.5rem;
+  }
+  .result-header h2 { color: #a78bfa; font-size: 1.3rem; margin-bottom: 0.5rem; }
+  .result-header p { color: #888; font-size: 0.9rem; }
+
+  .preview-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;
+  }
+  .preview-card {
+    background: #111; border-radius: 10px; overflow: hidden;
+    border: 1px solid #1a1a1a;
+  }
+  .preview-card h3 {
+    padding: 0.75rem 1rem; font-size: 0.85rem; color: #888;
+    border-bottom: 1px solid #1a1a1a;
+  }
+  .preview-card img {
+    width: 100%; height: auto; display: block;
+    background: repeating-conic-gradient(#1a1a1a 0% 25%, #111 0% 50%) 50%/16px 16px;
+  }
+
+  .parts-list {
+    background: #111; border-radius: 10px; padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem; border: 1px solid #1a1a1a;
+  }
+  .parts-list h3 { font-size: 0.9rem; color: #888; margin-bottom: 0.75rem; }
+  .part-tag {
+    display: inline-block; padding: 0.25rem 0.6rem; margin: 0.2rem;
+    border-radius: 6px; font-size: 0.8rem; background: #1a1a1a; color: #ccc;
+  }
+  .part-tag .z { color: #555; font-size: 0.7rem; }
+
+  .actions { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+  .btn {
+    padding: 0.7rem 1.5rem; border-radius: 8px; font-size: 0.9rem;
+    cursor: pointer; border: none; font-weight: 500;
+  }
+  .btn-primary { background: #a78bfa; color: #000; }
+  .btn-primary:hover { background: #c4b5fd; }
+  .btn-secondary { background: #222; color: #aaa; border: 1px solid #333; }
+  .btn-secondary:hover { background: #2a2a2a; color: #fff; }
+
+  .error {
+    background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3);
+    border-radius: 10px; padding: 1rem 1.25rem; display: none;
+    max-width: 640px; width: 100%; margin-bottom: 1rem;
+  }
+  .error.active { display: block; }
+
+  .qa-box {
+    background: #111; border-radius: 10px; padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem; border: 1px solid #1a1a1a;
+    font-size: 0.8rem; color: #888; white-space: pre-wrap;
+    max-height: 200px; overflow-y: auto;
+  }
+</style>
+</head>
+<body>
+
+<h1><span>Auto</span>Rig</h1>
+<p class="subtitle">이미지 한 장 → VTuber 모델 자동 생성</p>
+
+<div class="dropzone" id="dropzone">
+  <p>캐릭터 일러스트를 드래그하세요</p>
+  <small>PNG / JPG — 정면 포즈 권장</small>
+  <input type="file" id="fileInput" accept="image/png,image/jpeg,image/jpg">
+</div>
+
+<div class="progress" id="progress">
+  <div class="step" id="step1">
+    <div class="step-icon waiting" id="icon1">1</div>
+    <span class="step-text dim">Grok Vision으로 파츠 인식</span>
+  </div>
+  <div class="step" id="step2">
+    <div class="step-icon waiting" id="icon2">2</div>
+    <span class="step-text dim">파츠 분리 + 텍스처 아틀라스</span>
+  </div>
+  <div class="step" id="step3">
+    <div class="step-icon waiting" id="icon3">3</div>
+    <span class="step-text dim">Live2D JSON 생성</span>
+  </div>
+  <div class="step" id="step4">
+    <div class="step-icon waiting" id="icon4">4</div>
+    <span class="step-text dim">RigCheck QA 검증</span>
+  </div>
+</div>
+
+<div class="error" id="error"></div>
+
+<div class="results" id="results">
+  <div class="result-header">
+    <h2 id="resultTitle"></h2>
+    <p id="resultSub"></p>
+  </div>
+
+  <div class="preview-grid">
+    <div class="preview-card">
+      <h3>파츠 인식 결과</h3>
+      <img id="previewImg" alt="preview">
+    </div>
+    <div class="preview-card">
+      <h3>텍스처 아틀라스</h3>
+      <img id="atlasImg" alt="atlas">
+    </div>
+  </div>
+
+  <div class="parts-list">
+    <h3>인식된 파츠</h3>
+    <div id="partsTags"></div>
+  </div>
+
+  <div class="qa-box" id="qaBox"></div>
+
+  <div class="actions">
+    <button class="btn btn-primary" id="downloadBtn">ZIP 다운로드</button>
+    <button class="btn btn-secondary" onclick="resetUI()">다시 시도</button>
+  </div>
+</div>
+
+<script>
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+const progress = document.getElementById('progress');
+const errorEl = document.getElementById('error');
+const results = document.getElementById('results');
+let zipData = null;
+
+dropzone.addEventListener('click', () => fileInput.click());
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+dropzone.addEventListener('drop', e => {
+  e.preventDefault(); dropzone.classList.remove('dragover');
+  if (e.dataTransfer.files.length) processFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', e => {
+  if (e.target.files.length) processFile(e.target.files[0]);
+});
+
+document.getElementById('downloadBtn').addEventListener('click', () => {
+  if (!zipData) return;
+  const bytes = Uint8Array.from(atob(zipData), c => c.charCodeAt(0));
+  const blob = new Blob([bytes], { type: 'application/zip' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'autorig_model.zip'; a.click();
+  URL.revokeObjectURL(url);
+});
+
+async function processFile(file) {
+  if (!file.type.startsWith('image/')) {
+    showError('이미지 파일만 지원합니다 (PNG, JPG).');
+    return;
+  }
+
+  dropzone.style.display = 'none';
+  errorEl.classList.remove('active');
+  results.classList.remove('active');
+  progress.classList.add('active');
+
+  // 단계별 애니메이션
+  animateSteps();
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const res = await fetch('/api/autorig', { method: 'POST', body: formData });
+    const data = await res.json();
+    progress.classList.remove('active');
+
+    if (!res.ok) { showError(data.error || '서버 오류'); return; }
+    renderResults(data);
+  } catch (err) {
+    progress.classList.remove('active');
+    showError('서버에 연결할 수 없습니다.');
+  }
+}
+
+function animateSteps() {
+  const steps = [1,2,3,4];
+  let current = 0;
+  function next() {
+    if (current > 0) {
+      document.getElementById(`icon${current}`).className = 'step-icon done';
+      document.getElementById(`icon${current}`).textContent = '✓';
+      document.querySelector(`#step${current} .step-text`).classList.remove('dim');
+    }
+    current++;
+    if (current <= 4) {
+      document.getElementById(`icon${current}`).className = 'step-icon running';
+      document.querySelector(`#step${current} .step-text`).classList.remove('dim');
+      setTimeout(next, current === 1 ? 3000 : 1000);
+    }
+  }
+  next();
+}
+
+function showError(msg) {
+  errorEl.textContent = msg; errorEl.classList.add('active');
+  dropzone.style.display = ''; progress.classList.remove('active');
+  // Reset step icons
+  for (let i = 1; i <= 4; i++) {
+    document.getElementById(`icon${i}`).className = 'step-icon waiting';
+    document.getElementById(`icon${i}`).textContent = i;
+    document.querySelector(`#step${i} .step-text`).classList.add('dim');
+  }
+}
+
+function renderResults(data) {
+  document.getElementById('resultTitle').textContent =
+    `파츠 ${data.parts_count}개 인식 완료`;
+  document.getElementById('resultSub').textContent =
+    'Live2D runtime 파일이 생성되었습니다';
+
+  document.getElementById('previewImg').src = 'data:image/png;base64,' + data.preview_image;
+  if (data.atlas_image) {
+    document.getElementById('atlasImg').src = 'data:image/png;base64,' + data.atlas_image;
+  }
+
+  const tags = document.getElementById('partsTags');
+  tags.innerHTML = (data.parts || []).map(p =>
+    `<span class="part-tag">${p.name} <span class="z">z:${p.z_order}</span></span>`
+  ).join('');
+
+  document.getElementById('qaBox').textContent = data.qa_report || 'QA 데이터 없음';
+
+  zipData = data.zip_base64;
+  results.classList.add('active');
+}
+
+function resetUI() {
+  results.classList.remove('active');
+  dropzone.style.display = '';
+  fileInput.value = '';
+  zipData = null;
+  for (let i = 1; i <= 4; i++) {
+    document.getElementById(`icon${i}`).className = 'step-icon waiting';
+    document.getElementById(`icon${i}`).textContent = i;
+    document.querySelector(`#step${i} .step-text`).classList.add('dim');
+  }
+}
+</script>
+
+</body>
+</html>
